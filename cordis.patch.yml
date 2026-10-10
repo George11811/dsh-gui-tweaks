@@ -1,0 +1,19 @@
+# dsh-gui-tweaks 的组合包层（bundle patch）。
+#
+# 一个包 = 一行 = 一份客户端 bundle（一个包只能有一个客户端入口，entry id 就是包名），
+# 四个 GUI 增强功能都在这一行里：
+#
+#   fileFilter    按 gitignore 规则过滤 @ 补全与右侧栏「文件」树（默认 *.meta）
+#   bookmarks     右侧栏「书签」标签页，列表落在 DSH 主目录的 browser-bookmarks.json
+#   sessionDelete 会话行 / 「设置 → 已归档会话」行的删除按钮
+#   sidebarSwap   左右两栏整体对调（界面在「设置 → 通用」，状态记在本机浏览器）
+#
+# 四个开关与排除表都是这一行的 Config，在插件管理器的包页面上拨（宿主半边 lib/index.js
+# 声明 Config 并据此装载；客户端半边读同一份配置就地挂/卸）。关掉某个功能不需要禁用
+# 整个组合包，所以「粒度」变粗之后仍然能单独收掉某一项。
+#
+# 这一行由本文件提供：在插件管理器里停用本组合包，四个功能与它们的宿主路由一起消失；
+# 重新启用即回来。
+- insert:
+    - id: gui-tweaks
+      name: dsh-gui-tweaks
