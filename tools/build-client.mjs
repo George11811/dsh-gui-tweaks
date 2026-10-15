@@ -22,6 +22,7 @@ const PARTS = [
 	'bookmarks.client.js',
 	'session-delete.client.js',
 	'sidebar-swap.client.js',
+	'workspace-reveal.client.js',
 	'config-form.client.js',
 ]
 

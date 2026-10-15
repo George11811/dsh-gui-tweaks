@@ -1,8 +1,9 @@
 # dsh-gui-tweaks
 
-一个组合包，装着四件 Web GUI 增强功能。合并前它们是四个独立包
+一个组合包，装着五件 Web GUI 增强功能。前四件合并前是四个独立包
 （`dsh-file-filter` / `dsh-browser-bookmarks` / `dsh-session-delete` /
-`dsh-sidebar-swap`），现在共用一行 Loader 条目和一份客户端 bundle。
+`dsh-sidebar-swap`），第五件是后加的；现在它们共用一行 Loader 条目和一份客户端
+bundle。
 
 | 功能 | Config 字段 | 默认 | 宿主半边 | 浏览器半边 |
 |---|---|---|---|---|
@@ -10,22 +11,46 @@
 | 右侧栏「书签」标签页 | `bookmarks` | 开 | `/api/browser-bookmarks/*` + `browser-bookmarks.json` | 标签页类型 + 会话头按钮 |
 | 会话行 / 已归档会话行的删除按钮 | `sessionDelete` | 开 | `/api/session-admin/delete` | CSS-module 后缀 + fiber 定位插按钮 |
 | 左右两栏整体对调 | `sidebarSwap` | 开 | 无 | 改 AppFrame 三列网格 + 「设置 → 通用」开关 |
+| 工作区目录在系统文件管理器里打开 | `workspaceReveal` | 开 | 无（复用官方 Session Remote 的 `openWorkspacePath`） | 工作区行「...」菜单里补一项 |
 | 排除表（`fileFilter` 用） | `exclude` | `['*.meta']` | 判定器 | 同一张表单 |
 
-## 为什么只有一个开关，四个功能还是能分别关
+## 「在文件管理器中打开工作区」是怎么接的
+
+工作区行（`dsh` / `monkey` / `fish-pet` 那几行）的「...」菜单由 ui-workspace 直接
+写死两项（重命名 / 删除工作区），**没有 slot**，所以这一项是补到菜单 DOM 上的：
+
+- 新菜单出现时（`MutationObserver`，只在新节点里含 `button[role="menuitem"]` 时才扫），
+  克隆同一菜单里的一个菜单项 —— 这样主题类名、悬停样式、`role="menuitem"` 全都跟着
+  走；换掉文案与外链箭头图标，插在带 `*_danger` 类的那一项（删除工作区）之前。
+- 工作区目录从 React fiber 上读：菜单项 fiber 往上，**最近的**行 props 是
+  `ProjectRowItem` 的 `group.cwd`（绝对路径）就用它；最近的若是会话行的 `node.id`，
+  说明这是会话菜单，直接跳过（会话行在工作区分组之下，再往上也能撞见工作区的
+  `group`，所以只认最近的第一个）。
+- 点击在捕获阶段拦下并 `stopPropagation`（React 的委托监听挂在 portal 容器
+  `document.body` 上，冒泡阶段才轮到它），然后关菜单、调 RPC。
+- 打开动作走官方 Session Remote 的 `openWorkspacePath({ path, action: 'reveal' })`：
+  宿主先校验这个路径，再交给桌面文件管理器定位（Windows 资源管理器 / macOS 访达 /
+  Linux 的 xdg-open）。**本包宿主半边没有为此新增任何路由。**
+- 失败（部署没有桌面、路径已失效）弹一条 4 秒的提示条，不静默。
+
+`installWorkspaceReveal` 上挂了一个测试钩子 `apply.__test.workspacePathOf`，供
+`tools/smoke.mjs` 用假 fiber 链钉住「由最近的行 props 决定」这条规则。
+
+## 为什么只有一个开关，五个功能还是能分别关
 
 一个包只能有一个客户端入口：client-modules 里 entry id == 包名、一个包一份
 bundle，两行同名 Loader 行会直接判错（`package X resolves from multiple active
 Loader sources`）。所以合并的代价就是**组合包只有一行、插件管理器里只有一个总开关**。
 
-包内的四个 `Config` 布尔字段把这份粒度补回来了：
+包内的 `Config` 布尔字段把这份粒度补回来了：
 
 - 宿主半边（`lib/index.js`）按字段装载 —— `fileFilter` / `bookmarks` /
-  `sessionDelete` 关掉就不挂对应路由与包装器。这三个字段**故意不标 volatile**，
+  `sessionDelete` 关掉就不挂对应路由与包装器。这几个字段**故意不标 volatile**，
   所以拨开关会让 Loader 重挂这一行、宿主侧随之增删。
 - 浏览器半边（`lib/client.js`）订阅同一条配置 store，就地用 `ctx.plugin(...)`
-  挂 / 卸三个浏览器功能（`fileFilter` 没有浏览器半边）。关掉 `sidebarSwap` 时
-  「设置 → 通用」那一行会一起消失。
+  挂 / 卸四个浏览器功能（`fileFilter` 没有浏览器半边，`sidebarSwap` /
+  `workspaceReveal` 是纯浏览器功能）。关掉 `sidebarSwap` 时「设置 → 通用」那一行
+  会一起消失，关掉 `workspaceReveal` 时工作区菜单里的那一项不再出现。
 - 包页面上的配置表单**永远挂载**：否则开关关掉之后再没有地方打开它。
 
 `exclude` 仍标 volatile（同合并前的 file-filter）：改规则只换判定器，不重挂。
@@ -36,9 +61,10 @@ Loader sources`）。所以合并的代价就是**组合包只有一行、插件
 
 ```
 src/client.shell.js                    客户端条目壳（配置表单常驻 + 按开关挂载）
-lib/features/bookmarks.client.js       三个浏览器功能，各自是一个 IIFE 常量
+lib/features/bookmarks.client.js       四个浏览器功能，各自是一个 IIFE 常量
 lib/features/session-delete.client.js
 lib/features/sidebar-swap.client.js
+lib/features/workspace-reveal.client.js
 lib/features/config-form.client.js     包页面配置表单 + 设置命名空间探测
         ↓ node tools/build-client.mjs
 lib/client.js                          产物，随包提交，不要直接编辑

@@ -225,7 +225,7 @@ console.log('client half (lib/client.js)')
 await check('客户端条目导出 apply 与合并后的 inject 并集', () => {
 	assert.equal(registrations[0].id, 'dsh-gui-tweaks')
 	assert.equal(typeof client.apply, 'function')
-	assert.deepEqual(client.inject, ['slots', 'configForms', 'timer', 'locale', 'sessions'])
+	assert.deepEqual(client.inject, ['slots', 'configForms', 'timer', 'locale', 'sessions', 'remote', 'remote.session'])
 })
 
 /** Build a stub client context bound to one live config store. */
@@ -233,6 +233,7 @@ function makeClientHarness(initialValue) {
 	const value = { ...initialValue }
 	const listeners = new Set()
 	const mounts = []
+	const plugins = []
 	const disposes = []
 	const slots = []
 	const labels = []
@@ -273,6 +274,7 @@ function makeClientHarness(initialValue) {
 		on: () => () => {},
 		plugin: (plugin) => {
 			mounts.push(plugin.name)
+			plugins.push(plugin)
 			const child = makeCtx()
 			plugin.apply(child)
 			return { dispose: () => disposes.push(plugin.name) }
@@ -280,42 +282,65 @@ function makeClientHarness(initialValue) {
 	})
 	const ctx = makeCtx()
 	client.apply(ctx)
-	return { value, form, mounts, disposes, slots, labels }
+	return { value, form, mounts, plugins, disposes, slots, labels }
 }
 
-const allOn = makeClientHarness({ fileFilter: true, bookmarks: true, sessionDelete: true, sidebarSwap: true })
-await check('四个开关都开：包页面配置表单注册在组合包名下', () => {
+const allOn = makeClientHarness({ fileFilter: true, bookmarks: true, sessionDelete: true, sidebarSwap: true, workspaceReveal: true })
+await check('五个开关都开：包页面配置表单注册在组合包名下', () => {
 	assert.ok(allOn.slots.some((slot) => slot.name === 'plugins.bundle.config' && slot.key === 'dsh-gui-tweaks'))
 })
-await check('四个开关都开：sidebar-swap 挂上了「设置 → 通用」那一行', () => {
+await check('五个开关都开：sidebar-swap 挂上了「设置 → 通用」那一行', () => {
 	assert.ok(allOn.slots.some((slot) => slot.name === 'settings.general.item' && slot.id === 'sidebar-swap'))
 })
-await check('四个开关都开：三个浏览器功能各挂一个子 fiber', () => {
-	assert.deepEqual(allOn.mounts.sort(), ['dsh-gui-tweaks/bookmarks', 'dsh-gui-tweaks/sessionDelete', 'dsh-gui-tweaks/sidebarSwap'])
+await check('五个开关都开：四个浏览器功能各挂一个子 fiber', () => {
+	assert.deepEqual(allOn.mounts.sort(), [
+		'dsh-gui-tweaks/bookmarks',
+		'dsh-gui-tweaks/sessionDelete',
+		'dsh-gui-tweaks/sidebarSwap',
+		'dsh-gui-tweaks/workspaceReveal',
+	])
 	assert.ok(allOn.labels.some((label) => String(label).includes('config watch')))
 })
 
-await check('拨掉书签：只卸书签，不动另外两个', () => {
+await check('工作区菜单项：从 fiber 读出工作区目录，且不会认错会话菜单', () => {
+	const feature = allOn.plugins.find((plugin) => plugin.name === 'dsh-gui-tweaks/workspaceReveal')
+	const pathOf = feature.apply.__test.workspacePathOf
+	// 工作区行菜单：最近的行 props 是 ProjectRowItem 的 group。
+	assert.equal(pathOf({ __reactFiber$test: { memoizedProps: { group: { cwd: 'C:\\ws' } }, return: null } }), 'C:\\ws')
+	// 会话行菜单：最近的是 SessionNodeItem 的 node；再往上的工作区 group 不能认。
+	const workspace = { memoizedProps: { group: { cwd: 'C:\\ws' } }, return: null }
+	assert.equal(pathOf({ __reactFiber$test: { memoizedProps: { node: { id: 'session-1' } }, return: workspace } }), undefined)
+	// 没有 fiber（不是 React 渲染出来的节点）时什么都不做。
+	assert.equal(pathOf({}), undefined)
+})
+
+await check('拨掉书签：只卸书签，不动其他三个', () => {
 	allOn.form.mutate([{ op: 'set', path: ['bookmarks'], value: false }])
 	assert.deepEqual(allOn.disposes, ['dsh-gui-tweaks/bookmarks'])
-	assert.equal(allOn.mounts.length, 3)
+	assert.equal(allOn.mounts.length, 4)
 })
 
 await check('把剩下的也关掉：全部卸掉且不重复挂载', () => {
 	allOn.form.mutate([{ op: 'set', path: ['sessionDelete'], value: false }])
 	allOn.form.mutate([{ op: 'set', path: ['sidebarSwap'], value: false }])
-	assert.deepEqual(allOn.disposes.sort(), ['dsh-gui-tweaks/bookmarks', 'dsh-gui-tweaks/sessionDelete', 'dsh-gui-tweaks/sidebarSwap'])
-	assert.equal(allOn.mounts.length, 3)
+	allOn.form.mutate([{ op: 'set', path: ['workspaceReveal'], value: false }])
+	assert.deepEqual(allOn.disposes.sort(), [
+		'dsh-gui-tweaks/bookmarks',
+		'dsh-gui-tweaks/sessionDelete',
+		'dsh-gui-tweaks/sidebarSwap',
+		'dsh-gui-tweaks/workspaceReveal',
+	])
+	assert.equal(allOn.mounts.length, 4)
 })
 
 await check('再打开一个：只补挂它自己', () => {
 	allOn.form.mutate([{ op: 'set', path: ['bookmarks'], value: true }])
-	assert.equal(allOn.mounts.length, 4)
-	assert.equal(allOn.mounts[3], 'dsh-gui-tweaks/bookmarks')
+	assert.equal(allOn.mounts.length, 5)
+	assert.equal(allOn.mounts[4], 'dsh-gui-tweaks/bookmarks')
 })
 
-const allOff = makeClientHarness({ fileFilter: false, bookmarks: false, sessionDelete: false, sidebarSwap: false })
-await check('四个开关都关：表单仍在，一个浏览器功能都不挂', () => {
+const allOff = makeClientHarness({ fileFilter: false, bookmarks: false, sessionDelete: false, sidebarSwap: false, workspaceReveal: false })
+await check('五个开关都关：表单仍在，一个浏览器功能都不挂', () => {
 	assert.deepEqual(allOff.mounts, [])
 	assert.deepEqual(allOff.slots, [{ name: 'plugins.bundle.config', key: 'dsh-gui-tweaks' }])
 })

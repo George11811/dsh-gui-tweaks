@@ -60,6 +60,13 @@ window.__ModuleLoader__.load({
 				inject: ['slots', 'locale'],
 				apply: installSidebarSwap,
 			},
+			{
+				key: 'workspaceReveal',
+				label: '在文件管理器里打开工作区',
+				hint: '工作区行的「...」菜单里加一项，让宿主在系统文件管理器里定位该工作区目录。',
+				inject: ['locale', 'remote', 'remote.session'],
+				apply: installWorkspaceReveal,
+			},
 		]
 
 		/** 已挂载的浏览器功能：key -> 子 fiber。 */
@@ -156,8 +163,8 @@ window.__ModuleLoader__.load({
 		}
 
 		exports.apply = apply
-		// slots / configForms 是座位与配置表单；其余是三个浏览器功能各自声明的依赖。
-		exports.inject = ['slots', 'configForms', 'timer', 'locale', 'sessions']
+		// slots / configForms 是座位与配置表单；其余是四个浏览器功能各自声明的依赖。
+		exports.inject = ['slots', 'configForms', 'timer', 'locale', 'sessions', 'remote', 'remote.session']
 		return module.exports
 	},
 })
